@@ -7,7 +7,7 @@
 import argparse
 import os
 import sys
-from sklearn.externals import joblib
+import joblib
 
 import sys
 sys.path.append('../../')
@@ -21,7 +21,7 @@ args = vars(ap.parse_args())
 
 path = args["path"]
 camId = args["camId"]
-
+print(os.listdir(path))
 intrinsicJson = os.path.join(path, "cam{}_intrinsic.json".format(camId))
 extrinsicJson = os.path.join(path, "cam{}_references.json".format(camId))
 

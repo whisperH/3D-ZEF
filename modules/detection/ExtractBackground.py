@@ -12,7 +12,7 @@ class BackgroundExtractor():
     Class implementation for background subtraction
     """
     
-    def __init__(self, dataPath, camId, video=True):
+    def __init__(self, bg_file, cfg_path, media_file, video=True):
         """
         Initialize object
         
@@ -22,33 +22,32 @@ class BackgroundExtractor():
         
         print("BackgroundExtractor initialized.")
         
-        self.bgPath = os.path.join(dataPath, 'background_cam{0}.png'.format(camId))
+        self.bg_file = bg_file
         self.video = video
 
         if self.video:
-            self.vidPath = os.path.join(dataPath, 'cam{0}.mp4'.format(camId))
+            self.vid_file = media_file
 
             # Load video
-            cap = cv2.VideoCapture(self.vidPath)
+            cap = cv2.VideoCapture(self.vid_file)
         
             # Close program if video file could not be opened
             if not cap.isOpened():
-                print("Could not open file: {0}".format(self.vidPath))
+                print("Could not open file: {0}".format(self.vid_file))
                 sys.exit()
             self.cap = cap
         else:
-            self.imgPath = os.path.join(dataPath, 'cam{0}'.format(camId))
+            self.imgPath = media_file
         
             if not os.path.isdir(self.imgPath):
                 print("Could not find image folder {0}".format(self.imgPath))
                 sys.exit()
 
-
-        if(os.path.isfile(self.bgPath)):
+        if(os.path.isfile(self.bg_file)):
             print("Background file already exists. Exiting...")
             return
 
-        self.loadSettings(dataPath)
+        self.loadSettings(cfg_path)
 
 
     def loadSettings(self,path):
@@ -172,7 +171,7 @@ if __name__ == '__main__':
     # Prepare path
     bgPath = os.path.join(path, 'background_cam{0}.png'.format(camId))
 
-    bgExt = BackgroundExtractor(path, camId)
+    bgExt = BackgroundExtractor(path, camId, video=False)
     bgExt.collectSamples()
     bg = bgExt.createBackground()
     cv2.imwrite(bgPath, bg)

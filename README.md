@@ -7,7 +7,53 @@ In the paper we present our novel zebrafish 3D tracking dataset, recorded in a l
 
 
 As this is a collection of research code, one might find some occasional rough edges. We have tried to clean up the code to a decent level but if you encounter a bug or a regular mistake, please report it in our issue tracker. 
+### Zbrafish 毒理实验
+- 1.相机标定 运行video2img.py，将标定的视频文件转化成图片，然后使用matlab双目标定，计算内外参矩阵
 
+- 2.运行 ```common/ImgPosition.py```文件
+  -  标定时间、水箱位置
+        ```bash
+        python common/ImgPosition.py --view top --path D:\\program\\PotPlayer\\Capture
+        python common/ImgPosition.py --view left --path D:\\program\\PotPlayer\\Capture
+        python common/ImgPosition.py --view right --path D:\\program\\PotPlayer\\Capture
+        ```
+
+  -  根据标定结果，配置```E:\data\3D_pre\0918-0919fish```下setting.ini文件
+        ```bash
+        [ExpArea]字段中
+        exp_list = 1_1, 2_CK, 3_1, 4_1
+        
+        cam_list = D01,D02,D04
+        
+        D01_time_pos = 1192,27,1676,78
+        D02_time_pos = 1193,26,1681,76
+        D04_time_pos = 1200,58,1687,109
+        
+        D01_area = 1_1, 581, 93, 1020, 524 # {box_np}_{potency}, tl_x, tl_y, br_x, br_y
+            2_CK, 1050, 79, 1514, 535
+            3_1, 547, 556, 1010, 1047
+            4_1, 1049, 562, 1491, 1037
+        D04_area = 1_1, 98, 594, 974, 1007
+            3_1, 994, 598, 1890, 1000
+        D02_area = 4_1, 196, 593, 971, 978
+            2_CK, 993, 616, 1792, 965
+        ```
+- 3.切割视频:```python modules/dataset_processing/cutTank.py```文件，多线程执行文件
+    - 切割时间设定 {视频文件夹} 下的settings.ini文件，多个时间点以空行分开，注意不要加空格。
+        ```bash
+        D01_20210918195000.mp4=2021_09_18_19_51_20(strat time)
+            2021_09_18_19_55_20(strat time)
+        ```
+        ```python threading_cutRegion.py```标定时间、水箱位置，注意要修改 exp_floder的根目录位置
+        对应每个tank的路径，会在 **视频文件夹/cut_video** 生成切割好的数据，命名规则：```start_time_camNO```
+        例如：2021_09_18_19_51_20_D01.avi
+
+- 4.对每段视频执行目标检测 多进程：```python threading_detect.py```
+    - 顶部视图使用fastercnn，侧视图使用yolov5，检测生成的结果存储在 **视频文件夹/processed/{region_name}** 中。
+    
+- 5.在目标检测的基础上执行 ```BgDetector.py``` 多进程：```python threading_bgdetect.py```
+    - 首先将根目录下的settings.ini文件复制到 cut_video文件中，执行传统CV的特征提取方法，计算出一系列指标后存储于bg_processed
+    文件夹下（按隔间存储）
 
 ### Zebrafish Tracker Overview
 #### Tracker Pipeline 
@@ -36,8 +82,27 @@ TrackerVisual.py
     Runs through the specified camera view and construct initial 2D tracklets from the detected keypoints.
     
 TrackletMatching.py
-    
+
     Goes through the 2D tracklets from TrackerVisual.py and tries to make them into 3D tracklets.
+    
+    Pull the newest commit from our repo, which contains an updated Camera.py script and the new JsonToCamera.py script (https://bitbucket.org/aauvap/3d-zef/src/master/modules/reconstruction/JsonToCamera.py)
+    You should rename the intrinsic and references json files from the MOTChallenge data folder as follows:
+    
+    
+    camT_references.json -> cam1_references.json
+    camF_references.json -> cam2_references.json
+    
+    
+    camT_intrinsic.json -> cam1_intrinsic.json
+    camF_intrinsic.json -> cam2_intrinsic.json
+    
+    
+    you should then run the following commands from the reconstruction folder:
+    
+    python JsonToCamera.py -f (PathToJsonFIles) -c 1
+    python JsonToCamera.py -f (PathToJsonFIles) -c 2
+    
+    You should then be able to run the TrackletMatching and FinalizeTracklets scripts :)
     
 FinalizeTracks.py
     

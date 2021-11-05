@@ -50,6 +50,7 @@ class Tracker:
         
         config = readConfig(path)
         c = config['Tracker']
+        self.downsample = config['Detector'].getint('downsample_factor')
 
         if self.cam == 1:
             self.ghostThreshold = c.getfloat('cam1_ghost_threshold')
@@ -169,8 +170,10 @@ class Tracker:
 
         if self.cam == 1: 
             # L2 distance
-            distCost = np.linalg.norm(self.tracks[trackIndex].pos[-1]-np.array(self.detections[detIndex].pt))
-        elif self.cam == 2:  # Make sure the coordinates are in order x,y and not y,x (as the cov matrix will be incorrect then)
+            distCost = np.linalg.norm(
+                self.tracks[trackIndex].pos[-1] - np.array(self.detections[detIndex].pt)
+            )
+        else:  # Make sure the coordinates are in order x,y and not y,x (as the cov matrix will be incorrect then)
             # Mahalanobis distance
             detPt = np.asarray(self.detections[detIndex].pt).reshape(1,2)
             trackPt = np.asarray(self.tracks[trackIndex].pos[-1]).reshape(1,2)
@@ -221,7 +224,7 @@ class Tracker:
                    BBdict["aa_h"]]
 
     
-    def recognise(self, frameNumber, detections, bbox, verbose=False):
+    def recognise(self, frameNumber, detections, bbox, verbose=True):
         """
         Update tracker with new measurements.
         This is done by calculating a pairwise distance matrix and finding the optimal solution through the Hungarian algorithm.
@@ -266,6 +269,45 @@ class Tracker:
         
         killedTracks = []
         for (mRow, pCol) in matches:
+            '''
+            matches 行代表检测的值，列代表轨迹的值，如 matches[1][3]代表第一个检测点和第三条轨迹之间的损失
+            在匹配过程中，可能会遇到下列情况：
+            1. 构造损失矩阵时：检测数量numNew>=轨迹数量numOld:
+                检测索引mRow >= 检测数量numNew(因为是从0开始计算索引的，所以等号属于超纲的）:
+                    不可能发生
+                检测索引mRow < 检测数量numNew:
+                    跟踪索引 pCol < 轨迹数量 numOld（说明pCol in tracker_list）:
+                        损失阈值 matches[mRow][pCol] < ghostThreshold:
+                            Operation: tracks[pCol].append(mRow)
+                            
+                        损失阈值 matches[mRow][pCol] >= ghostThreshold:
+                            # 这个点可能有问题或者这个轨迹可能有问题，有两种可能：新增轨迹 或者 kill计数
+                            Operation:  
+                            
+                    跟踪索引 pCol >= 轨迹数量 numOld（说明pCol not in tracker_list）:
+                        损失阈值 matches[mRow][pCol] < ghostThreshold:
+                            Operation:  不可能出现，因为在初始化的时候，matches为ghostThreshold的值
+                            
+                        损失阈值 matches[mRow][pCol] >= ghostThreshold:
+                            Operation:  newTrack = Track(mRow)
+                                        tracks.append(newTrack)
+                                        轨迹数量增加了
+                                        
+            2. 构造损失矩阵时：检测数量numNew<轨迹数量numOld:
+                检测索引mRow >= 检测数量numNew(因为是从0开始计算索引的，所以等号属于超纲的）:
+                    可能发生，当轨迹数量大于检测数量时，但是这样的情况无意义
+                    
+                检测索引mRow <  检测数量numNew:
+                    跟踪索引 pCol < 轨迹数量 numOld（说明pCol in tracker_list）:
+                        损失阈值 matches[mRow][pCol] < ghostThreshold:
+                            Operation: tracks[pCol].append(mRow)
+                            
+                        损失阈值 matches[mRow][pCol] >= ghostThreshold:
+                            # 这个点可能有问题或者这个轨迹可能有问题，需要kill计数
+                            Operation:  
+                    跟踪索引 pCol >= 轨迹数量 numOld（说明pCol in tracker_list）:
+                        不可能发生
+            '''
             ## If the assignment cost is below the Ghost threshold, then update the existing tracklet
             if(costM[mRow][pCol] < self.ghostThreshold):
                 # Update existing track with measurement
@@ -297,7 +339,7 @@ class Tracker:
 
                     if verbose:
                         print("Num tracks: {}".format(len(self.tracks)))
-                
+
                 # The track is deleted if the following is true:
                 # 1) The assigned detection is a dummy detection (mRow >= numNew),
                 # 2) There are more tracks than detections (numOld > numNew)
@@ -320,7 +362,7 @@ class Tracker:
 ###########################
 ###### MAIN START!!! ######
 ###########################
-def drawline(track,frame): 
+def drawline(track, frame):
     """
     Draw the last 50 points of the provided track on the provided frame
     
@@ -406,188 +448,39 @@ def readDetectionCSV(df, downsample):
     
     return kps, bbs
 
-def saveTrackCSV(allTracks, folder, csvFilename, frameCount):
+def saveTrackCSV(allTracks, folder, csvFilename, downsample):
     df = tracks2Dataframe(allTracks)
-    df['x'] *= det.downsample
-    df['y'] *= det.downsample
-    df['tl_x'] *= det.downsample
-    df['tl_y'] *= det.downsample
-    df['c_x'] *= det.downsample
-    df['c_y'] *= det.downsample
-    df['w'] *= det.downsample
-    df['h'] *= det.downsample
-    df["aa_tl_x"] *= det.downsample
-    df["aa_tl_y"] *= det.downsample
-    df["aa_w"] *= det.downsample
-    df["aa_h"] *= det.downsample
-    df["l_x"] *= det.downsample
-    df["l_y"] *= det.downsample
-    df["r_x"] *= det.downsample
-    df["r_y"] *= det.downsample
+    df['x'] *= downsample
+    df['y'] *= downsample
+    df['tl_x'] *= downsample
+    df['tl_y'] *= downsample
+    df['c_x'] *= downsample
+    df['c_y'] *= downsample
+    df['w'] *= downsample
+    df['h'] *= downsample
+    df["aa_tl_x"] *= downsample
+    df["aa_tl_y"] *= downsample
+    df["aa_w"] *= downsample
+    df["aa_h"] *= downsample
+    df["l_x"] *= downsample
+    df["l_y"] *= downsample
+    df["r_x"] *= downsample
+    df["r_y"] *= downsample
     df['cam'] = camId
 
     outputPath = os.path.join(folder, csvFilename)
     print("Saving data to: {0}".format(outputPath))
     df.to_csv(outputPath)
 
-
-def videoTracking(path, camId, det, df_fish, video, preDet):
-    vidPath = os.path.join(path, 'cam{0}.mp4'.format(camId))
-    
-    cap = cv2.VideoCapture(vidPath)
-
-    # Close program if video file could not be opened
-    if not cap.isOpened():
-        print("Could not open video file {0}".format(vidPath))
-        sys.exit()
-
-
-    df_counter = 0
-    
-    # Prepare tracker
-    tra = Tracker(path, camId)       
-
-    frameCount = 0
-    while(cap.isOpened()):
-        key = cv2.waitKey(1)
-        ret, frame = cap.read()
-        frameCount += 1
-        #print("Frame: {0}".format(frameCount))        
-        if key & 0xFF == ord("q"):
-            break
-
-        if (ret):
-
-            ## Detect keypoints in the frame, and draw them
-            if not preDet or video:
-                kps, bbs = det.detect(frame)
-            
-            if preDet:
-                if df_counter >= len(df_fish):
-                    break
-
-                fish_row = df_fish.loc[(df_fish['frame'] == frameCount)]    
-                if len(fish_row) == 0:
-                    continue
-                kps, bbs = readDetectionCSV(fish_row, det.downsample)
-                df_counter += len(fish_row)
-
-            # Associate new detections with tracklets, and potentially create new/kill old tracklets
-            tra.recognise(frameCount, kps, bbs)
-            
-            if video:
-                frame = cv2.drawKeypoints(det.frame, kps, None, (255,0,0), 4)
-                t = tra.tracks
-                if t is not None:
-                    for idx, i in enumerate(t):
-                        if i.pos:                        
-                            ## Draw line of the tracklet and draw the keypoints again
-                            pos = (int(i.pos[len(i.pos)-1][0]),int(i.pos[len(i.pos)-1][1]))
-                            frame = drawline(i,frame)
-                            frame = cv2.drawKeypoints(frame, kps, None, (0,255,0), 4)
-                
-                ## Draw the skeletons        
-                frame[(det.thin),0]=0
-                frame[(det.thin),1]=0
-                frame[(det.thin),2]=255
-                cv2.imshow("Frame",frame)
-
-        else:
-            if(frameCount > 1000):
-                break
-            else:
-                continue
-    
-    cap.release()
-    cv2.destroyAllWindows()
-        
-    # Check if /processed/ folder exists
-    folder = os.path.join(path,'processed')
-    if not os.path.isdir(folder):
-        os.mkdir(folder)
-
-    # Save CSV file
-    allTracks = tra.tracks+tra.oldTracks
-    csvFilename = 'tracklets_2d_cam{0}.csv'.format(camId)
-    saveTrackCSV(allTracks, folder, csvFilename, frameCount)
-
-
-def imageTracking(path, camId, det, df_fish, video, preDet):
-    imgPath = os.path.join(path, 'cam{0}'.format(camId))
-    
-    # Close program if video file could not be opened
-    if not os.path.isdir(imgPath):
-        print("Could not find image folder {0}".format(imgPath))
-        sys.exit()
-
-
-    df_counter = 0
-    
-    # Prepare tracker
-    tra = Tracker(path, camId)       
-
-    frameCount = 0
-    
-    filenames = [f for f in sorted(os.listdir(imgPath)) if os.path.splitext(f)[-1] in [".png", ".jpg"]]
-    for filename in filenames:
-        key = cv2.waitKey(1)
-        frame = cv2.imread(os.path.join(imgPath, filename))
-
-        frameCount = int(filename[:-4])
-        if key & 0xFF == ord("q"):
-            break
-
-        ## Detect keypoints in the frame, and draw them
-        if not preDet or video:
-            kps, bbs = det.detect(frame)
-        
-        if preDet:
-            if df_counter >= len(df_fish):
-                break
-
-            fish_row = df_fish.loc[(df_fish['frame'] == frameCount)]    
-            if len(fish_row) == 0:
-                continue
-            kps, bbs = readDetectionCSV(fish_row, det.downsample)
-            df_counter += len(fish_row)
-
-        # Associate new detections with tracklets, and potentially create new/kill old tracklets
-        tra.recognise(frameCount, kps, bbs)
-        
-        if video:
-            frame = cv2.drawKeypoints(det.frame, kps, None, (255,0,0), 4)
-            t = tra.tracks
-            if t is not None:
-                for idx, i in enumerate(t):
-                    if i.pos:                        
-                        ## Draw line of the tracklet and draw the keypoints again
-                        pos = (int(i.pos[len(i.pos)-1][0]),int(i.pos[len(i.pos)-1][1]))
-                        frame = drawline(i,frame)
-                        frame = cv2.drawKeypoints(frame, kps, None, (0,255,0), 4)
-            
-            ## Draw the skeletons        
-            frame[(det.thin),0]=0
-            frame[(det.thin),1]=0
-            frame[(det.thin),2]=255
-            cv2.imshow("Frame",frame)
-
-    # Check if /processed/ folder exists
-    folder = os.path.join(path,'processed')
-    if not os.path.isdir(folder):
-        os.mkdir(folder)
-
-    # Save CSV file
-    allTracks = tra.tracks+tra.oldTracks
-    csvFilename = 'tracklets_2d_cam{0}.csv'.format(camId)
-    saveTrackCSV(allTracks, folder, csvFilename, frameCount)
-
-
-def csvTracking(path, camId, det, df_fish):
+def csvTracking(path, camId, df_fish):
     df_counter = 0
     # Prepare tracker
     tra = Tracker(path, camId)       
     
-    frameList = np.linspace(df_fish["frame"].min(), df_fish["frame"].max(), df_fish["frame"].max() - df_fish["frame"].min() + 1, True, dtype=np.int)
+    frameList = np.linspace(
+        df_fish["frame"].min(), df_fish["frame"].max(), df_fish["frame"].max() - df_fish["frame"].min() + 1,
+        True, dtype=np.int32
+    )
 
     for frameCount in frameList:
         #print("Frame: {0}".format(frameCount))        
@@ -598,38 +491,43 @@ def csvTracking(path, camId, det, df_fish):
         fish_row = df_fish.loc[(df_fish['frame'] == frameCount)]    
         if len(fish_row) == 0:
             continue
-        kps, bbs = readDetectionCSV(fish_row, det.downsample)
+        kps, bbs = readDetectionCSV(fish_row, tra.downsample)
         df_counter += len(fish_row)
 
         tra.recognise(frameCount, kps, bbs)
 
         
     # Check if /processed/ folder exists
-    folder = os.path.join(path,'processed')
+    folder = os.path.join(path, 'tracklets_2D', region_name)
     if not os.path.isdir(folder):
-        os.mkdir(folder)
+        os.makedirs(folder)
 
     # Save CSV file
     allTracks = tra.tracks+tra.oldTracks
-    csvFilename = 'tracklets_2d_cam{0}.csv'.format(camId)
-    saveTrackCSV(allTracks, folder, csvFilename, frameCount)
+
+    csvFilename = detect_file
+    saveTrackCSV(allTracks, folder, csvFilename, tra.downsample)
+
 
 
 if __name__ == "__main__":
     # construct the argument parser and parse the arguments
     ap = argparse.ArgumentParser()
-    ap.add_argument("-f", "--path", help="Path to folder")
-    ap.add_argument("-c", "--camId", help="Camera ID. top = 1 and front = 2")
-    ap.add_argument("-v", "--video", action='store_true', help="Show video")
-    ap.add_argument("-i", "--images", action='store_true', help="Use extracted images, instead of mp4 file")
-    ap.add_argument("-pd", "--preDetector", action='store_true', help="Use pre-computed detections from csv file")
-        
+    # ap.add_argument("-f", "--path", default='E:\\data\\3D_pre\\0918-0919fish', help="Path to folder")
+    ap.add_argument("-f", "--path", default='E:\\data\\OCU_ZeF2', help="Path to folder")
+    ap.add_argument("-c", "--camId", default='1', help="Camera ID. top = 1 and front = 2")
+    ap.add_argument("-pd", "--preDetector", default=True, action='store_true', help="Use pre-computed detections from csv file")
+    ap.add_argument("--region_name", default='1_WideType', help="region name of experience")
+    ap.add_argument("--detect_file", default='20211031_ch12.csv', help="region name of experience")
+    ap.add_argument("--showTracklet", default=True, help="region name of experience")
+
     args = vars(ap.parse_args())
     
     # ARGUMENTS *************
-    video = args["video"]
+    showTracklet = args["showTracklet"]
     preDet = args["preDetector"]
-    useImages = args["images"]
+    region_name = args["region_name"]
+    detect_file = args["detect_file"]
 
     if args.get("camId", None) is None:
         print('No camera ID given. Exitting.')
@@ -645,32 +543,12 @@ if __name__ == "__main__":
 
     df_fish = None
     if preDet:
-        detPath = os.path.join(path,'processed', 'detections_2d_cam{0}.csv'.format(camId))
+        detPath = os.path.join(path, 'bg_processed', f'{region_name}/{detect_file}')
         if os.path.isfile(detPath):
             df_fish = pd.read_csv(detPath, sep=",") 
         else:
             print("Detections file found '{}' not found. Ending program".format(detPath))
             sys.exit()
 
-
-    bgPath = os.path.join(path, 'background_cam{0}.png'.format(camId))
-
-    # Check if background-image exists
-    if not os.path.isfile(bgPath):
-        print("No background image present") 
-        print("... creating one.") 
-        bgExt = BackgroundExtractor(path, camId, video = not useImages)
-        bgExt.collectSamples()
-        bg = bgExt.createBackground()
-        cv2.imwrite(bgPath, bg)
-
-    # Prepare detector
-    det = BgDetector(camId, path)
-
     if preDet:
-        csvTracking(path, camId, det, df_fish)
-    else:
-        if useImages:
-            imageTracking(path, camId, det, df_fish, video, preDet)
-        else:
-            videoTracking(path, camId, det, df_fish, video, preDet)
+        csvTracking(path, camId, df_fish)

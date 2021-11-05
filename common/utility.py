@@ -10,11 +10,184 @@ import numpy as np
 import networkx as nx
 import scipy.spatial.distance as dist
 from scipy import ndimage
+import sys,platform
+if platform.system() != 'Windows':
+    import fcntl
+
 from common.Track import Track
-from sklearn.externals import joblib
+# from sklearn.externals import joblib
+import joblib
+import math
+import time
+import datetime
+
+camera_id_map = {
+        "ch02": 1,
+        "ch03": 2,
+        "ch01": 3,
+        "ch04": 3,
+        "ch05": 2,
+        "ch06": 1,
+        "ch07": 2,
+        "ch08": 3,
+        "ch09": 1,
+        "ch10": 2,
+        "ch11": 3,
+        "ch12": 1,
+        "ch13": 3,
+        "ch14": 2,
+        "ch16": 1,
+    }
 
 
-def readConfig(path):
+def manual_recorrect(time_str, start_time, video_name):
+    #
+    if video_name == 'ch12_20211012020154.mp4':
+        if start_time in [
+            "2021_10_12_08_11_59", "2021_10_12_08_23_59", "2021_10_12_08_35_59",
+            "2021_10_12_08_47_59", "2021_10_12_08_59_59"
+        ]:
+            time_str = time_str.replace("2021-10-12 8", "2021 10 12 08")
+        return time_str
+    elif video_name == 'ch08_20211012200000.mp4':
+        if start_time in ['2021_10_13_07_10_08']:
+            time_str = time_str.replace("2021-10-13@7.10.08@", "2021_10_13_07_10_08")
+        return time_str
+    elif video_name == "ch12_20211012200000.mp4":
+        # 出現年月日無法識別的情況
+        time_str = time_str.strip()
+        if time_str[:10] in ['2021-10-12', '2021-10-13']:
+            timestep_str = time_str[10:].strip()
+            if len(timestep_str) >= 8:
+                hh = timestep_str[0:2]
+                mm = timestep_str[3:5]
+                ss = timestep_str[6:8]
+                return f"{time_str[:10]}_{hh}_{mm}_{ss}"
+    elif video_name == 'ch02_20211013183000.mp4':
+        if '2021_10_13_19' in start_time:
+            time_str = time_str.replace("2021-10-139", "2021-10-13 19")
+    elif video_name == "ch12_20211016193000.mp4":
+        if '2021_10_17_01_50' in start_time:
+            time_str = time_str.replace("2021-10-1701250", "2021-10-17 01 50")
+    elif video_name == "ch12_20211015190000.mp4":
+        if '2021_10_16_06_01' in start_time:
+            time_str = time_str.replace("2021-10-1606:01100", "2021_10_16_06_01_00")
+        if '2021_10_16_06_21' in start_time:
+            time_str = time_str.replace("2021-10-1606/21100", "2021_10_16_06_21_00")
+        if '2021_10_16_07_47' in start_time:
+            time_str = time_str.replace("2021-10-1607:47100", "2021_10_16_07_47_00")
+    elif video_name == "ch12_20211014180000.mp4":
+        time_str = time_str.replace("2021-10-1421450:00", "2021-10-14 21 49:59"). \
+                replace("2021-10-1420449:59", "2021-10-14 20 49:59").\
+                replace("2021-10-1505449:59", "2021-10-15 05 49:59"). \
+                replace("2021-10-1421449:59", "2021_10_14_21_49_59")
+                # replace("2021-10-1421449:59", "2021_10_14_21_49_59")
+
+    # elif video_name == 'ch10_20211013183000.mp4':
+    #     if '2021_10_13' in start_time:
+    #         time_str = time_str
+    # else:
+    #     if CamNO == "ch02":
+    #         # 出現年月日無法識別的情況
+    #         time_str = time_str.strip()
+    #         try:
+    #             timesteps_str = time_str.split("@")[-2]
+    #
+    #             digital_timesteps_str = re.findall('\d+', timesteps_str)
+    #             digital_timesteps_str = "".join(digital_timesteps_str)
+    #             digital_timesteps_str = digital_timesteps_str[-6:]
+    #             if video_name in ["ch02_20211012010327.mp4"]:
+    #                 digital_timesteps_str = "0" + digital_timesteps_str
+    #             if int(digital_timesteps_str[:2]) - int(hh) >= 0:
+    #                 time_str = f"{year}_{month}_{day}_" \
+    #                     f"{digital_timesteps_str[:2]}_" \
+    #                     f"{digital_timesteps_str[2:4]}_" \
+    #                     f"{digital_timesteps_str[4:6]}"
+    #             else:
+    #                 time_str = f"{year}_{month}_{str(int(day) + 1)}_" \
+    #                     f"{digital_timesteps_str[:2]}_" \
+    #                     f"{digital_timesteps_str[2:4]}_" \
+    #                     f"{digital_timesteps_str[4:6]}"
+    #         except:
+    #             print(f"time_str: split @ in {time_str}")
+    return time_str
+
+
+def getImgTime(frame, postion, start_time, video_name, verbose=False, reader=None):
+    t_tl_y, t_br_y, t_tl_x, t_br_x = postion
+    frame_area = frame[t_tl_y:t_br_y, t_tl_x:t_br_x]  # 裁剪时间
+
+    if verbose:
+        # print(result)
+        cv2.imshow('frame area', frame)
+        cv2.imshow('frame area1', frame_area)
+        cv2.waitKey(10)
+
+    # result = reader.readtext(frame_area.copy())
+    result = reader.ocr(frame_area.copy(), det=False)
+
+    if len(result) == 0:
+        time_str = str(int(time.time()))
+
+        return time_str
+    else:
+        # time_str = ''
+        # for ires in result:
+        #     time_str += ires[1] + '@'
+        time_str = result[0][0]
+        time_str = time_str.replace("Z", '2').replace("z", '2'). \
+            replace("O", '0').replace("o", '0').replace("a", '0'). \
+            replace("k", '4').replace("Q", '0').replace("S", '5'). \
+            replace("12021", "2021").replace("B", "8").replace("J", "0"). \
+            replace(")", "0").replace("T", "1").replace("202-10", "2021-10"). \
+            replace("202-0", "2021-10").replace(":/", ":").replace("2021210-1", "2021-10-1").\
+            replace("2029270-1", "2021-10-1").replace("2029210-1", "2021-10-1"). \
+            replace("2021210-1", "2021-10-1").replace("2029290-1", "2021-10-1").\
+            replace("2021290-1", "2021-10-1").replace("2029240-1", "2021-10-1").\
+            replace("202929-1", "2021-10-1").replace("2021410-1", "2021-10-1").\
+            replace("2024-10", "2021-10").replace("2029-10", "2021-10").\
+            replace("2021240-1", "2021-10-1").replace("202140-1", "2021-10-1").\
+            replace("2021540-1", "2021-10-1").replace("2021510-1", "2021-10-1"). \
+            replace("2021340-1", "2021-10-1").replace("2021110-1", "2021-10-1"). \
+            replace("2021010-1", "2021-10-1").replace("2021310-1", "2021-10-1"). \
+            replace("2021810-1", "2021-10-1").replace("2021840-1", "2021-10-1"). \
+            replace("2024010-1", "2021-10-1").replace("2021-0-1", "2021-10-1"). \
+            replace("2024540-1", "2021-10-1").replace("20210-1", "2021-10-1"). \
+            replace("2021040-1", "2021-10-1").replace("2024810-1", "2021-10-1"). \
+            replace("2024210-1", "2021-10-1")
+        # print(f"str format time_str is {time_str}")
+
+        try:
+            digital_time_str = re.findall('\d+', time_str)
+            digital_str = "".join(digital_time_str)
+            assert len(digital_str) == 14, 'orc result digital error!'
+            # time_str = "_".join(digital_time_str)
+            year = digital_str[0:4]
+            month = digital_str[4:6]
+            day = digital_str[6:8]
+            hh = digital_str[8:10]
+            mm = digital_str[10:12]
+            ss = digital_str[12:14]
+            time_str = f"{year}_{month}_{day}_{hh}_{mm}_{ss}"
+            assert len(time_str) == 19, 'orc result length is smaller than true label!'
+        except:
+            # if DEBUG:
+            print(f"extract date frome OCR failed with {time_str}")
+            time_str = manual_recorrect(time_str, start_time, video_name)
+
+            year = time_str[0:4]
+            month = time_str[5:7]
+            day = time_str[8:10]
+            hh = time_str[11:13]
+            mm = time_str[14:16]
+            ss = time_str[17:19]
+            time_str = f"{year}_{month}_{day}_{hh}_{mm}_{ss}"
+            print(f"manual correct with {time_str}")
+        return time_str.strip()
+
+
+
+def readConfig(path, configFile=None):
     """
     Reads the settings.ini file located at the specified directory path
     If no file is found the system is exited
@@ -27,7 +200,11 @@ def readConfig(path):
     """
     
     config = configparser.ConfigParser(inline_comment_prefixes='#')
-    configFile = os.path.join(path,'settings.ini')
+    if configFile is not None:
+        configFile = configFile
+    else:
+        configFile = os.path.join(path, 'settings.ini')
+
     if(os.path.isfile(configFile)):
         config.read(configFile)
         return config
@@ -36,7 +213,7 @@ def readConfig(path):
         sys.exit(0)
 
 
-def writeConfig(path, updateValues):
+def writeConfig(path, updateValues, cfgFile=None):
     """
     Writes to the settings.ini file located at the specified directory path
     If no file is found the system is exited
@@ -47,13 +224,22 @@ def writeConfig(path, updateValues):
         
     """
     config = configparser.ConfigParser(allow_no_value=True)
-    configFile = os.path.join(path,'settings.ini')
+    if cfgFile is not None:
+        configFile = cfgFile
+    else:
+        configFile = os.path.join(path,'settings.ini')
     if(os.path.isfile(configFile)):
         config.read(configFile)
 
         for values in updateValues:
-            config.set(values[0], values[1], values[2])
+            if (values[1] is None) and (values[2] is None):
+                config.remove_section(values[0])
+                config.add_section(values[0])
+            else:
+                config.set(values[0], values[1], values[2])
         with open(configFile, 'w') as configfile:
+            if sys.platform == 'linux':
+                fcntl.flock(configfile.fileno(), fcntl.LOCK_EX)
             config.write(configfile)
 
         print("Updated configuration file: {}".format(configFile))
@@ -676,6 +862,78 @@ def getROI(path, camId):
 
     return tl, br
 
+def getTankROI(path, camId):
+    """
+    Loads the JSON camera parameters and reads the Region of Interest that has been manually set
+    """
+
+    # Load json file
+    with open(os.path.join(path, "cam{}_references.json".format(camId))) as f:
+        data = f.read()
+
+    # Remove comments
+    pattern = re.compile('/\*.*?\*/', re.DOTALL | re.MULTILINE)
+    data = re.sub(pattern, ' ', data)
+
+    # Parse json
+    data = json.loads(data)
+
+    tl = int(data[0]["camera"]["x"]), int(data[0]["camera"]["y"])
+    tr = int(data[1]["camera"]["x"]), int(data[1]["camera"]["y"])
+    br = int(data[2]["camera"]["x"]), int(data[2]["camera"]["y"])
+    bl = int(data[3]["camera"]["x"]), int(data[3]["camera"]["y"])
+
+    # 左上，左下 的x
+    xmin = min(tl[0], bl[0])
+    # 左上，右上 的y
+    ymin = min(tl[1], tr[1])
+    # 右上，右下 的x
+    xmax = max(tr[0], br[0])
+    # 左下，右下 的y
+    ymax = max(bl[1], br[1])
+
+    return xmin, ymin, xmax, ymax
+
+def load_EXP_region_pos_setting(config_floder, camNO):
+    config = readConfig(config_floder)
+    c = config['ExpArea']
+    region_pos = c.get(f'{camNO}_area')
+    region_dict = {}
+
+    for iline in region_pos.split("\n"):
+        region_name, region_tl_x, region_tl_y, region_br_x, region_br_y = iline.split(',')
+        region_dict[region_name] = (int(region_tl_x) ,int(region_tl_y), int(region_br_x), int(region_br_y))
+    return region_dict
+
+def load_EXP_region_name(config_floder):
+    config = readConfig(config_floder)
+    c = config['ExpArea']
+    region_name = c.get(f'exp_list')
+    return region_name.split(',')
+
+def load_Video_start_time(config_floder, video_name, time_part='VideoStartTime'):
+    config = readConfig(config_floder)
+    c = config[time_part]
+    time_list = c.get(video_name)
+    print(video_name)
+    if time_list is not None:
+        start_time = time_list.split()
+        return start_time
+    else:
+        return []
+
+def load_Cam_list(config_floder):
+    config = readConfig(config_floder)
+    c = config['ExpArea']
+    region_name = c.get(f'cam_list')
+    return region_name.split(',')
+
+def load_time_pos_setting(config_floder, camId):
+    config = readConfig(config_floder)
+    c = config['ExpArea']
+    time_pos = c.get(f'{camId}_time_pos')
+    t_tl_x, t_tl_y, t_br_x, t_br_y = time_pos.split(',')
+    return int(t_tl_y) ,int(t_br_y), int(t_tl_x), int(t_br_x)
 
 def applyROIBBs(bboxes, tl, br):
     """
@@ -701,3 +959,82 @@ def applyROIBBs(bboxes, tl, br):
         roi_bboxes = None
     
     return roi_bboxes
+
+# https://www.jb51.net/article/164697.htm
+def calAngle(v1, v2):
+    '''
+    计算两个向量之间的夹角
+    AB = [1,-3,5,-1]
+    CD = [4,1,4.5,4.5]
+    ang1 = angle(AB, CD)
+    :param v1: [Ax, Ay, Bx, By]
+    :param v2: [Cx, Cy, Dx, Dy]
+    :return:
+    '''
+    dx1 = v1[2] - v1[0]
+    dy1 = v1[3] - v1[1]
+    dx2 = v2[2] - v2[0]
+    dy2 = v2[3] - v2[1]
+    angle1 = math.atan2(dy1, dx1)
+    angle1 = int(angle1 * 180 / math.pi)
+    # print(angle1)
+    angle2 = math.atan2(dy2, dx2)
+    angle2 = int(angle2 * 180 / math.pi)
+    # print(angle2)
+    if angle1 * angle2 >= 0:
+        included_angle = abs(angle1 - angle2)
+    else:
+        included_angle = abs(angle1) + abs(angle2)
+        if included_angle > 180:
+            included_angle = 360 - included_angle
+    return included_angle
+
+def calGIOU(boxes1, boxes2):
+    '''
+    cal GIOU of two boxes or batch boxes
+    such as: (1)
+            boxes1 = np.asarray([[0,0,5,5],[0,0,10,10],[15,15,25,25]])
+            boxes2 = np.asarray([[5,5,10,10]])
+            and res is [-0.49999988  0.25       -0.68749988]
+            (2)
+            boxes1 = np.asarray([[0,0,5,5],[0,0,10,10],[0,0,10,10]])
+            boxes2 = np.asarray([[0,0,5,5],[0,0,10,10],[0,0,10,10]])
+            and res is [1. 1. 1.]
+    :param boxes1:[xmin,ymin,xmax,ymax] or
+                [[xmin,ymin,xmax,ymax],[xmin,ymin,xmax,ymax],...]
+    :param boxes2:[xmin,ymin,xmax,ymax]
+    :return:
+    '''
+
+    # cal the box's area of boxes1 and boxess
+    boxes1Area = (boxes1[..., 2] - boxes1[..., 0]) * (boxes1[..., 3] - boxes1[..., 1])
+    boxes2Area = (boxes2[..., 2] - boxes2[..., 0]) * (boxes2[..., 3] - boxes2[..., 1])
+
+    # ===========cal IOU=============#
+    # cal Intersection
+    left_up = np.maximum(boxes1[..., :2], boxes2[..., :2])
+    right_down = np.minimum(boxes1[..., 2:], boxes2[..., 2:])
+
+    inter_section = np.maximum(right_down - left_up, 0.0)
+    inter_area = inter_section[..., 0] * inter_section[..., 1]
+    union_area = boxes1Area + boxes2Area - inter_area
+    ious = np.maximum(1.0 * inter_area / union_area, np.finfo(np.float32).eps)
+
+    # ===========cal enclose area for GIOU=============#
+    enclose_left_up = np.minimum(boxes1[..., :2], boxes2[..., :2])
+    enclose_right_down = np.maximum(boxes1[..., 2:], boxes2[..., 2:])
+    enclose = np.maximum(enclose_right_down - enclose_left_up, 0.0)
+    enclose_area = enclose[..., 0] * enclose[..., 1]
+
+    # cal GIOU
+    gious = ious - 1.0 * (enclose_area - union_area) / enclose_area
+
+    return gious
+
+def getRealTime(ID_T, part):
+    time_date = time.strptime(ID_T[4:], "%Y%m%d%H%M%S")
+    unix_time = time.mktime(time_date)
+    t = datetime.datetime.fromtimestamp(unix_time + (int(part) - 1) * 60).strftime("%Y-%m-%d-%H-%M-%S")
+    process_result = str(t)
+    return process_result
+

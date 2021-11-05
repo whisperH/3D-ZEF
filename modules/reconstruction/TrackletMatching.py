@@ -101,11 +101,11 @@ class TrackletMatcher:
             path: String path the main folder, containing the processed folder with the 2D tracklets.   
         """
         
-        self.cam1Tracks = csv2Tracks(os.path.join(path, 'processed/tracklets_2d_cam1.csv'),
+        self.cam1Tracks = csv2Tracks(os.path.join(path, 'processed', 'tracklets_2d_cam1.csv'),
                                      offset=self.camera1_offset,
                                      minLen=self.trackletMinLength,
                                      maxFrame=self.camera1_length)
-        self.cam2Tracks = csv2Tracks(os.path.join(path,'processed/tracklets_2d_cam2.csv'),
+        self.cam2Tracks = csv2Tracks(os.path.join(path,'processed', 'tracklets_2d_cam2.csv'),
                                      offset=self.camera2_offset,
                                      minLen=self.trackletMinLength,
                                      maxFrame=self.camera2_length) 
@@ -302,6 +302,7 @@ class TrackletMatcher:
         
         for tId in self.cam1Tracks:
             t = self.cam1Tracks[tId]
+            # concurrent中存储的是与cam1有帧交集的所有cam2中的2D tracklet
             concurrent = self.findConcurrent(t,self.cam2Tracks)
             
             for c in concurrent:
@@ -333,6 +334,7 @@ class TrackletMatcher:
         """
         
         for key in ['cam1','cam2']:
+            # 取出node节点中的信息
             currId = self.graph.nodes[nodeName][key]
             if(currId not in self.camIdMap):
                 self.camIdMap[currId] = []
@@ -352,13 +354,13 @@ class TrackletMatcher:
             Input:
                 verbose: Whether to print information on the nodes connected and their weights.
             """
-
+            # camIdMap存储的是 [某个对象的id][nodeName：topid-frontid]
             for trackId in self.camIdMap:       
                 elements = [e for e in self.camIdMap[trackId]]
                     
                 for e1 in elements:
                     e1Track = self.triangulated[e1]
-                    
+
                     for e2 in elements:
                         if(e1 == e2):
                             continue
@@ -494,11 +496,14 @@ if __name__ == '__main__':
     args = vars(ap.parse_args())
     
     # ARGUMENTS *************
-    if args.get("path", None) is None:
-        print('No path was provided. Try again!')
-        sys.exit()
-    else:
-        dataPath = args["path"]
+    # if args.get("path", None) is None:
+    #     print('No path was provided. Try again!')
+    #     sys.exit()
+    # else:
+    #     dataPath = args["path"]
+
+    # this is for debug
+    dataPath = "E:\\code\\3D-Zef\\data\\3DZeF20\\train\\ZebraFish-01"
 
     tm = TrackletMatcher(dataPath)
     tm.createNodes()

@@ -1,7 +1,8 @@
 import cv2
 import os.path
 import numpy as np
-from sklearn.externals import joblib
+# from sklearn.externals import joblib
+import joblib
 ### Module imports ###
 import sys
 sys.path.append('../../')
