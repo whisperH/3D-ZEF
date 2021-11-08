@@ -28,16 +28,20 @@ if __name__ == '__main__':
     # gpustr = [4,5,6,7]
     if(platform.system()=='Windows'):
         exp_floder = os.path.join(f"E:\\data\\3D_pre\\{args.DayTank}")
+        config_folder = exp_floder
+        camera_id_list = load_Cam_list(config_folder)
+        region_names = load_EXP_region_name(config_folder)
     elif(platform.system()=='Linux'):
         try:
             exp_floder = os.path.join(f"/home/data/HJZ/zef/{args.DayTank}")
+            config_folder = exp_floder
+            camera_id_list = load_Cam_list(config_folder)
+            region_names = load_EXP_region_name(config_folder)
         except:
             exp_floder = os.path.join(f"/home/huangjinze/code/data/zef/{args.DayTank}")
-
-    config_folder = exp_floder
-    camera_id_list = load_Cam_list(config_folder)
-    region_names = load_EXP_region_name(config_folder)
-
+            config_folder = exp_floder
+            camera_id_list = load_Cam_list(config_folder)
+            region_names = load_EXP_region_name(config_folder)
 
     processed_list = []
     format_video_names = []
@@ -63,6 +67,7 @@ if __name__ == '__main__':
     cmds = []
     for idx, ivideo in enumerate(format_video_names):
         video_floder, video_name = os.path.split(ivideo)
+        region_str = ''
         for iregion in region_names:
             # process_floder: E:\data\3D_pre\0918-0919fish\processed
             # iregion: 2_CK
@@ -82,22 +87,31 @@ if __name__ == '__main__':
                 print(f"{process_name} has been processed")
                 continue
             else:
-                cmd_str = f"python modules/detection/BgDetector.py " \
-                    f"--path {exp_floder} " \
-                    f"--region_name {iregion} " \
-                    f"--video_name {video_name} "
+                region_str += f"{iregion},"
 
-                cmds.append(cmd_str)
-    if(platform.system()=='Windows'):
-        print(cmds)
-        exit(3)
+        cmd_str = f"python modules/detection/BgDetector.py " \
+            f"--path {exp_floder} " \
+            f"--region_names {region_str[:-1]} " \
+            f"--video_name {video_name} "
 
+        cmds.append(cmd_str)
+
+
+    cmds = list(set(cmds))
     print("*****************************************************")
     print(f"{len(cmds)} are need to be processed")
+    if(platform.system()=='Windows'):
+        print(cmds)
+        # exit(333)
     print("*****************************************************")
+
     if if_parallel:
         # 并行
-        pool = Pool(10)
+        if(platform.system()=='Windows'):
+            print(cmds)
+            pool = Pool(4)
+        else:
+            pool = Pool(10)
         pool.map(execCmd, cmds)
         pool.close()  # 关闭进程池，不再接受新的进程
         pool.join()

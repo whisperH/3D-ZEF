@@ -42,41 +42,27 @@ camera_id_map = {
 
 def manual_recorrect(time_str, start_time, video_name):
     #
-    if video_name == 'ch12_20211012020154.mp4':
+    if 'ch08' in video_name:
+        if start_time in ['2021_10_13_07_10_08']:
+            time_str = time_str.replace("2021-10-13@7.10.08@", "2021_10_13_07_10_08")
+        return time_str
+    elif 'ch03' in video_name or 'ch02' in video_name or 'ch01' in video_name:
+        if '2021_10_13_19' in start_time:
+            time_str = time_str.replace("2021-10-13u9", "2021-10-13 19").replace("2021-10-139", "2021-10-13 19")
+    elif "ch12" in video_name:
         if start_time in [
             "2021_10_12_08_11_59", "2021_10_12_08_23_59", "2021_10_12_08_35_59",
             "2021_10_12_08_47_59", "2021_10_12_08_59_59"
         ]:
             time_str = time_str.replace("2021-10-12 8", "2021 10 12 08")
-        return time_str
-    elif video_name == 'ch08_20211012200000.mp4':
-        if start_time in ['2021_10_13_07_10_08']:
-            time_str = time_str.replace("2021-10-13@7.10.08@", "2021_10_13_07_10_08")
-        return time_str
-    elif video_name == "ch12_20211012200000.mp4":
-        # 出現年月日無法識別的情況
-        time_str = time_str.strip()
-        if time_str[:10] in ['2021-10-12', '2021-10-13']:
-            timestep_str = time_str[10:].strip()
-            if len(timestep_str) >= 8:
-                hh = timestep_str[0:2]
-                mm = timestep_str[3:5]
-                ss = timestep_str[6:8]
-                return f"{time_str[:10]}_{hh}_{mm}_{ss}"
-    elif video_name == 'ch02_20211013183000.mp4':
-        if '2021_10_13_19' in start_time:
-            time_str = time_str.replace("2021-10-139", "2021-10-13 19")
-    elif video_name == "ch12_20211016193000.mp4":
         if '2021_10_17_01_50' in start_time:
             time_str = time_str.replace("2021-10-1701250", "2021-10-17 01 50")
-    elif video_name == "ch12_20211015190000.mp4":
         if '2021_10_16_06_01' in start_time:
             time_str = time_str.replace("2021-10-1606:01100", "2021_10_16_06_01_00")
         if '2021_10_16_06_21' in start_time:
             time_str = time_str.replace("2021-10-1606/21100", "2021_10_16_06_21_00")
         if '2021_10_16_07_47' in start_time:
             time_str = time_str.replace("2021-10-1607:47100", "2021_10_16_07_47_00")
-    elif video_name == "ch12_20211014180000.mp4":
         time_str = time_str.replace("2021-10-1421450:00", "2021-10-14 21 49:59"). \
                 replace("2021-10-1420449:59", "2021-10-14 20 49:59").\
                 replace("2021-10-1505449:59", "2021-10-15 05 49:59"). \

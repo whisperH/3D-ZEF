@@ -63,6 +63,7 @@ class BgDetector:
         self.detectorType = c.get('cam{}_type'.format(self.camId))
         self.downsample = c.getint('downsample_factor')  # How much to downsample the image by
         self.blurSize = c.getint('blur_size')  # Size of median blur
+        # self.blurSize = 1  # Size of median blur
         self.minBlobSize = c.getint('min_blob_size')  # used to filter BLOBs in the "blob" function
         self.maxBlobSize = c.getint('max_blob_size')  # used to filter BLOBs in the "blob" function
         self.minPatchArea = c.getint("min_patch_area")  # used to filter BLOBs in calceig
@@ -71,7 +72,8 @@ class BgDetector:
         self.winSize = c.getint("window_size")  # Size of window around keypoint in calcEig
         self.nms_thresh = c.getfloat("nms_threshold")  # Threshold for how large an overlap there can be before applying NMS
         self.mean_threshold = c.getfloat("mean_threshold")  # Threshold for how large an overlap there can be before applying NMS
-
+        if self.mean_threshold is None:
+            self.mean_threshold = 3
         if self.camId == 1:
             self.max_frame = c.getint("cam1_maxframe")
             self.min_frame = c.getint("cam1_minframe")
@@ -82,7 +84,19 @@ class BgDetector:
             self.max_frame = c.getint("cam3_maxframe")
             self.min_frame = c.getint("cam3_minframe")
 
-        tl_x, tl_y, br_x, br_y = load_EXP_region_pos_setting(path, self.camNO)[self.region_name]
+        if type(self.region_name) is list:
+            tl_x, tl_y, br_x, br_y = 10000, 10000, 0, 0
+            for iregion in self.region_name:
+                try:
+                    itl_x, itl_y, ibr_x, ibr_y = load_EXP_region_pos_setting(path, self.camNO)[iregion]
+                    tl_x = min(itl_x, tl_x)
+                    tl_y = min(itl_y, tl_y)
+                    br_x = max(ibr_x, br_x)
+                    br_y = max(ibr_y, br_y)
+                except:
+                    continue
+        else:
+            tl_x, tl_y, br_x, br_y = load_EXP_region_pos_setting(path, self.camNO)[self.region_name]
         tl, br = np.array([tl_x, tl_y]), np.array([br_x, br_y])
         self.tl = tl // self.downsample
         self.br = br // self.downsample
@@ -119,6 +133,7 @@ class BgDetector:
 
         ## Subtract background
         self.diff = self.bgSubtract(self.frame)
+        self.diff = self.applyROIMat(self.diff)
         if verbose:
             plt.imshow(self.diff)
             plt.show()
@@ -152,16 +167,12 @@ class BgDetector:
             if verbose:
                 plt.imshow(self.thresh)
                 plt.show()
-        elif (self.camId == 2):
-            # Threshold image using max entropy
-            th = self.entropySplit(self.blur)
-            self.thresh = self.blur > th
-        elif (self.camId == 3):
+        else:
             # Threshold image using max entropy
             th = self.entropySplit(self.blur)
             self.thresh = self.blur > th
         # Remove everything outside of the ROI
-        self.thresh = self.applyROIMat(self.thresh)
+
         if verbose:
             plt.imshow(self.thresh)
             plt.show()
@@ -427,18 +438,26 @@ class BgDetector:
             bb: List of dictionaries each contatining the top left coordiantes, width, height and angle of the rotated bounding box as well as the center coordiantes of the origianl bounding box
         """
 
-        if self.bboxes and (self.camId == 2 or self.camId == 3):
-            keypoints = [x for x in range(len(self.bboxes))]
+        # if self.bboxes and (self.camId == 2 or self.camId == 3):
+        #     keypoints = [x for x in range(len(self.bboxes))]
 
         bbs = []
         for key in keypoints:
-
+            bbox = None
             if self.bboxes:  # If BBOXs have been detected, utilize these
                 if self.camId == 2 or self.camId == 3:
-                    bbox = self.bboxes[key]
+                    try:
+                        bbox = self.bboxes[key]
+                    except:
+                        bbox = None
                 else:
                     bbox = key[-1]
+            if bbox is not None:
+                predInfo = True
+            else:
+                predInfo = False
 
+            if predInfo:
                 blob = self.labels.copy()
                 blob[:bbox[1]] = 0
                 blob[bbox[3] + 1:] = 0
@@ -483,7 +502,7 @@ class BgDetector:
             theta = self.findRotation(blob)
             tl, br, center, left, right = self.getBB(blob)
 
-            if self.bboxes:
+            if predInfo:
                 tl = (bbox[0], bbox[1])
                 br = (bbox[2], bbox[3])
 
@@ -525,7 +544,7 @@ class BgDetector:
                 bb["cov"] = cov
 
             # Confidence:
-            if self.bboxes:
+            if predInfo:
                 bb["conf"] = bbox[-1]
             else:
                 bb["conf"] = 1.0
@@ -939,8 +958,8 @@ class BgDetector:
                     else:
                         endpoints[key] = points[key]
 
-        else:
-            endpoints = self.getInterestPoints(self.thin, self.labels, kernel, findJunctions, None)
+        # else:
+        endpoints = self.getInterestPoints(self.thin, self.labels, kernel, findJunctions, None)
 
         # Remove any empty lists in the dict
         endpoints = {key: endpoints[key] for key in endpoints if endpoints[key]}
@@ -1066,7 +1085,7 @@ class BgDetector:
         return size, angle
 
 
-def _analyseFrame(frame, frameCount, det, predet_df, showVideo):
+def _analyseFrame(frame, frameCount, det, predet_df, showVideo, frame_time_str=None):
     """
     Performs the main loop of detection fish in a frame
 
@@ -1106,7 +1125,8 @@ def _analyseFrame(frame, frameCount, det, predet_df, showVideo):
     if showVideo:
         # draw keypoint
         frame = cv2.drawKeypoints(det.frame, kps, None, (255, 0, 0), 4)
-
+        cv2.rectangle(frame, (det.tl[0], det.tl[1]),
+                      (det.br[0], det.br[1]), (0, 0, 0), 1)
         for bb in bbs:
             cv2.rectangle(frame, (bb["aa_tl_x"], bb["aa_tl_y"]),
                           (bb["aa_tl_x"] + bb["aa_w"], bb["aa_tl_y"] + bb["aa_h"]), (0, 0, 0), 1)
@@ -1118,9 +1138,16 @@ def _analyseFrame(frame, frameCount, det, predet_df, showVideo):
         frame[(det.thin), 0] = 0
         frame[(det.thin), 1] = 0
         frame[(det.thin), 2] = 255
-        cv2.imshow("test", frame)
-        cv2.waitKey(100)
-        # plt.imshow(frame)
+        if(platform.system()=='Windows'):
+            # cv2.imshow('test', frame)
+            # cv2.waitKey(100)
+            cv2.imwrite(f"{path}/bg_processed/{frame_time_str}_{camId}.png", frame)
+            print(f"image result saved in {path}/bg_processed/{frame_time_str}_{camId}.png")
+            # print("test")
+        elif(platform.system()=='Linux'):
+            cv2.imwrite(f"{path}/bg_processed/{frame_time_str}_{camId}.png", frame)
+            print(f"image result saved in {path}/bg_processed/{frame_time_str}_{camId}.png")
+        # ******************************************************************* /
         # plt.show()
 
     # Save data into CSV file
@@ -1128,57 +1155,30 @@ def _analyseFrame(frame, frameCount, det, predet_df, showVideo):
     for detection in detections:
         kps, bb = detection
         bb["frame"] = frameCount
+        bb["frame_time_str"] = frame_time_str
         bb["x"] = kps.pt[0]
         bb["y"] = kps.pt[1]
         detLst.append((bb))
 
     return detLst
 
-
-if __name__ == '__main__':
-    import pandas as pd
-    from modules.detection.ExtractBackground import BackgroundExtractor
-
-    # construct the argument parser and parse the arguments
-    ap = argparse.ArgumentParser()
-    # ap.add_argument("-f", "--path", default='/home/HJZ/data/3D_pre/exp_pre/', help="Path to folder")
-    ap.add_argument("-f", "--path", default='E:\\data\\3D_pre\\D4_T2', help="Path to folder")
-    ap.add_argument("--region_name", default='4_4Hydroxy50ppm', help="region name of experience")
-    ap.add_argument("--video_name", default='2021_10_15_08_01_00_ch06.avi', help="camerid and recording datetime")
-    ap.add_argument("-v", "--video", default=True, action='store_true', help="input media is video")
-    ap.add_argument("-i", "--images", action='store_true', help="Use extracted images instead of mp4 file")
-    ap.add_argument("-pd", "--preDet", default=True, action='store_true', help="Use predetected bounding boxes")
-    ap.add_argument("-verbose", "--verbose", default=False, action='store_true', help="show process")
-
-
-    args = vars(ap.parse_args())
-
-    # ARGUMENTS *************
-    path = args["path"]
-    video = args["video"]
-    useImages = args["images"]
-    preDet = args["preDet"]
-    verbose = args["verbose"]
-    if(platform.system()=='Windows'):
-        showVideo = True
-    elif(platform.system()=='Linux'):
-        showVideo = False
-
-    region_name = args["region_name"]
-    video_name = args["video_name"]
-    camNO = video_name.split(".")[0].split("_")[-1]
-    video_nameT = '_'.join(video_name.split(".")[0].split("_")[: -1])
-
-    camId = camera_id_map[camNO]
-
+def load_SingleDetectRes(region_name):
     preDet_file = os.path.join(path, 'processed', region_name, video_name.replace("avi", "csv"))
-    video_path = os.path.join(path, 'cut_video')
-    bg_path = os.path.join(path, 'cut_video')
 
+    if os.path.isfile(preDet_file):
+        predet_df = pd.read_csv(preDet_file, sep=",")
+        try:
+            predet_df["Frame"] = predet_df["Filename"].str.replace(".jpg", "").astype('int32')
+        except:
+            predet_df["Frame"] = predet_df["Frame"].astype('int32')
+    else:
+        predet_df = None
+    return predet_df
+
+def generate_SingleBgDetect(region_name):
     bgDet_path = os.path.join(path, 'bg_processed', region_name)
     bgDet_file = os.path.join(bgDet_path, video_name.replace("mp4", "csv").replace("avi", "csv").replace("MOV", "csv"))
 
-    base_cfg_path = path
     cfg_path = video_path
     video_settings_file = os.path.join(cfg_path, video_nameT+"_settings.ini")
     # Check if /processed/ folder exists
@@ -1190,21 +1190,66 @@ if __name__ == '__main__':
             os.path.join(path, 'settings.ini'),
             video_settings_file
         )
+    return bgDet_file, video_settings_file
 
-    vid_file = os.path.join(video_path, video_name)
+if __name__ == '__main__':
+    import pandas as pd
+    from paddleocr import PaddleOCR
+    from modules.detection.ExtractBackground import BackgroundExtractor
 
-    if os.path.isfile(preDet_file):
-        predet_df = pd.read_csv(preDet_file, sep=",")
-        try:
-            predet_df["Frame"] = predet_df["Filename"].str.replace(".jpg", "").astype('int32')
-        except:
-            predet_df["Frame"] = predet_df["Frame"].astype('int32')
-    else:
-        predet_df = None
+    # construct the argument parser and parse the arguments
+    ap = argparse.ArgumentParser()
+    # ap.add_argument("-f", "--path", default='/home/HJZ/data/3D_pre/exp_pre/', help="Path to folder")
+    ap.add_argument("-f", "--path", default='G:\\data\\3D_pre\\D1_T2', help="Path to folder")
+    ap.add_argument("--region_names",
+                    default='1_6PPD500PPb,2_6PPD500PPb,3_6PPD500PPb,4_6PPD500PPb',
+                    # default='2_6PPDQ1ppm,4_6PPDQ1ppm',
+                    # default='1_4Hydroxy50ppm',
+                    help="region name of experience")
+    ap.add_argument("--video_name", default='2021_10_11_23_26_00_ch04.avi', help="camerid and recording datetime")
+    ap.add_argument("-v", "--video", default=True, action='store_true', help="input media is video")
+    ap.add_argument("-i", "--images", action='store_true', help="Use extracted images instead of mp4 file")
+    ap.add_argument("-pd", "--preDet", default=True, action='store_true', help="Use predetected bounding boxes")
+    ap.add_argument("-verbose", "--verbose", default=False, action='store_true', help="show process")
 
-    bg_file = os.path.join(bg_path, 'background_cam{0}.jpg'.format(camId))
+
+    args = vars(ap.parse_args())
+    reader = PaddleOCR(use_angle_cls=True, lang='en')
+    # ARGUMENTS *************
+    path = args["path"]
+    video = args["video"]
+    useImages = args["images"]
+    preDet = args["preDet"]
+    verbose = args["verbose"]
+    if(platform.system()=='Windows'):
+        showVideo = True
+    elif(platform.system()=='Linux'):
+        showVideo = True
+
+    region_names = args["region_names"]
+    video_name = args["video_name"]
+
+
+    camNO = video_name.split(".")[0].split("_")[-1]
+    video_nameT = '_'.join(video_name.split(".")[0].split("_")[: -1])
+    base_cfg_path = path
+    camId = camera_id_map[camNO]
+
+    bg_path = os.path.join(path, 'cut_video')
+    # bg_file = os.path.join(bg_path, f'{video_nameT}_cam{camId}.jpg')
+    bg_file = os.path.join(bg_path, f'background_cam{camId}.jpg')
+
+    # load deep learning detect result
+    region_name = region_names.split(",")
+    predet_df = pd.DataFrame()
+    for iregion in region_name:
+        df = load_SingleDetectRes(iregion)
+        predet_df = pd.concat([predet_df, df])
+
 
     # Configure settings for either reading images or the video file.
+    video_path = os.path.join(path, 'cut_video')
+    vid_file = os.path.join(video_path, video_name)
     print("processing video: ", vid_file)
     cap = cv2.VideoCapture(vid_file)
 
@@ -1222,7 +1267,7 @@ if __name__ == '__main__':
         cv2.imwrite(bg_file, bg)
 
     # Prepare detector
-    det = BgDetector(camNO, base_cfg_path, bg_file, region_name, video_settings_file)
+    det = BgDetector(camNO, base_cfg_path, bg_file, region_name, os.path.join(path, 'settings.ini'))
 
     # Prepare output dataframe
     df = pd.DataFrame()
@@ -1233,12 +1278,17 @@ if __name__ == '__main__':
     # Analyse and detect fish using the video file
     while (cap.isOpened()):
         ret, frame = cap.read()
+        time_pos = load_time_pos_setting(base_cfg_path, camNO)
+        frame_time_str = getImgTime(frame, time_pos, video_nameT, video_name, verbose=verbose, reader=reader)
         frameCount += 1
 
-        if frameCount % 1000 == 0:
-            print(f"Frame: {frameCount} in {path}/{video_name}/{region_name}")
-
+        if frameCount % 100 == 0:
+            showVideo = True
+            print(f"Frame: {frameCount} in {frame_time_str}---{path}/{video_name}/{region_name}")
+        else:
+            showVideo = False
         if frameCount < det.min_frame:
+        # if frameCount < 100:
             continue
 
         if (frameCount > det.max_frame) and (det.max_frame > 0):
@@ -1251,22 +1301,17 @@ if __name__ == '__main__':
                 break
 
         if ret:
-            dets = _analyseFrame(frame, frameCount, det, predet_df, showVideo)
+            dets = _analyseFrame(frame, frameCount, det, predet_df, showVideo, frame_time_str)
             detLst.extend(dets)
 
         else:
-            if (frameCount > 1000):
+            if (frameCount > det.max_frame):
                 frameCount -= 1
                 break
             else:
                 continue
     cap.release()
     cv2.destroyAllWindows()
-
-    writeConfig(path, [("CameraSynchronization", "cam{}_length".format(camId),
-                        str(frameCount) + " #Automatically set in BgDetector.py")],
-                cfgFile=video_settings_file
-                )
 
     for bb in detLst:
         df_tmp = pd.DataFrame({
@@ -1292,10 +1337,18 @@ if __name__ == '__main__':
             "var_x": [bb["cov"][0, 0] * (det.downsample ** 2)],
             "var_y": [bb["cov"][1, 1] * (det.downsample ** 2)],
             "covar": [bb["cov"][0, 1] * (det.downsample ** 2)],
-            "confidence": [bb["conf"]]})
+            "confidence": [bb["conf"]],
+            "time_str": bb["frame_time_str"]
+        })
         df = df.append(df_tmp)
 
     df = df.sort_values(by=['frame'], ascending=[True])
 
-    print("Saving data to: {0}".format(bgDet_file))
-    df.to_csv(bgDet_file)
+    for iregion in region_name:
+        bgDet_file, video_settings_file = generate_SingleBgDetect(iregion)
+        writeConfig(path, [("CameraSynchronization", "cam{}_length".format(camId),
+                            str(frameCount) + " #Automatically set in BgDetector.py")],
+                    cfgFile=video_settings_file
+                    )
+        print("Saving data to: {0}".format(bgDet_file))
+        df.to_csv(bgDet_file)

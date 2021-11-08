@@ -81,12 +81,12 @@ def capture_video(color):
 
 if __name__ == '__main__':
     verbose = True
-    root_path = "E:\\data\\3D_pre\\cam2"
+    root_path = "E:\\data\\3D_pre\\D4_T4\\cut_video"
     jump_frame = 0
     settings = {
         'l_top': {
-            'video_path': f'{root_path}\\left.mp4',
-            'image_path': f'{root_path}\\top_left\\left',
+            'video_path': f'{root_path}\\2021_10_14_20_09_59_ch12.avi',
+            'image_path': f'{root_path}\\img',
         },
         'top_l': {
             'video_path': f'{root_path}\\top.mp4',
@@ -103,7 +103,8 @@ if __name__ == '__main__':
 
     }
     startno = 1
-    for i in ['l_top', 'top_l', 'r_top', 'top_r']:
+    # for i in ['l_top', 'top_l', 'r_top', 'top_r']:
+    for i in ['l_top']:
         try:
             capture_video(i)
         except Exception as e:
