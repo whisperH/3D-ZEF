@@ -13,10 +13,15 @@
 *.pyc
 *.cpython-35.pyc
 *.json
+*.idea
+*.tar
 3d_reconstruction/images/
 __pycache__/
 *.py[cod]
-
+*.zip
+data/
+modules/Sessions/*
+*.html
 *.bbl
 *.aux
 *.log
